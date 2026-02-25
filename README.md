@@ -19,7 +19,7 @@ A production-ready RESTful API for a news platform where **Authors** publish con
 
 - **Node.js** >= 18.x
 - **PostgreSQL** >= 13.x
-- **Redis** >= 6.x (for BullMQ job queue)
+- **Redis** >= 6.x (optional — fallback aggregation runs without Redis)
 
 ## 🚀 Setup & Run
 
@@ -27,17 +27,19 @@ A production-ready RESTful API for a news platform where **Authors** publish con
 
 ```bash
 git clone <repo-url>
-cd news-api
+cd <repo-name>/backend
 npm install
 ```
 
 ### 2. Environment Variables
 
-Copy the example env file and configure:
+Copy the example env file (from the repo root) into the backend directory and configure:
 
 ```bash
-cp .env.example .env
+cp ../.env.example .env
 ```
+
+Then edit `.env` with your actual PostgreSQL credentials:
 
 | Variable         | Description                  | Default                                                  |
 | ---------------- | ---------------------------- | -------------------------------------------------------- |
@@ -56,9 +58,6 @@ npx prisma generate
 
 # Run database migrations
 npx prisma migrate dev --name init
-
-# (Optional) Open Prisma Studio to inspect data
-npx prisma studio
 ```
 
 ### 4. Run the Server
@@ -117,16 +116,21 @@ npm test
 ### Project Structure
 
 ```
-src/
-├── config/          # Environment & database configuration
-├── controllers/     # Request handlers (thin layer)
-├── services/        # Business logic (testable)
-├── middleware/       # Auth, RBAC, validation, error handling
-├── routes/          # Express route definitions
-├── validators/      # Zod validation schemas
-├── jobs/            # BullMQ analytics aggregation job
-├── utils/           # Response builders
-└── server.ts        # Application entry point
+backend/
+├── prisma/          # Database schema & migrations
+├── src/
+│   ├── config/      # Environment & database configuration
+│   ├── controllers/ # Request handlers (thin layer)
+│   ├── services/    # Business logic (testable)
+│   ├── middleware/   # Auth, RBAC, validation, error handling
+│   ├── routes/      # Express route definitions
+│   ├── validators/  # Zod validation schemas
+│   ├── jobs/        # BullMQ analytics + fallback aggregation
+│   ├── utils/       # Response builders
+│   ├── __tests__/   # Unit tests
+│   └── server.ts    # Application entry point
+├── package.json
+└── tsconfig.json
 ```
 
 ### Key Design Decisions
@@ -137,11 +141,11 @@ src/
 
 3. **Read Rate Limiting**: An in-memory Map tracks the last read timestamp per user+article. Reads within 10 seconds are deduplicated to prevent view count inflation.
 
-4. **Analytics Aggregation**: BullMQ processes a daily cron job (midnight GMT) that aggregates `ReadLog` entries into `DailyAnalytics` via upsert.
+4. **Analytics Aggregation**: BullMQ processes a daily cron job (midnight GMT) that aggregates `ReadLog` entries into `DailyAnalytics` via upsert. When Redis is unavailable, a fallback in-process aggregation runs on startup and every 5 minutes.
 
 5. **RBAC Middleware**: Role-based access control with `authenticate`, `optionalAuth`, and `authorizeRole` middleware for clean, declarative route protection.
 
-6. **Graceful Redis Fallback**: If Redis is unavailable, the API still works — only the job queue is disabled with a warning.
+6. **Graceful Redis Fallback**: If Redis is unavailable, the API still works with in-process aggregation — only the BullMQ job queue is disabled.
 
 ## 🔐 Security
 
