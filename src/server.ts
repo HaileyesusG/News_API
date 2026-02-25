@@ -61,8 +61,18 @@ const startServer = async () => {
       await scheduleDailyAggregation();
       console.log('📊 Analytics engine initialized (Redis connected)');
     } else {
-      console.warn('⚠️  Redis not available — Analytics job queue disabled.');
-      console.warn('   API endpoints work fine. Install/start Redis to enable daily analytics aggregation.');
+      console.warn('⚠️  Redis not available — BullMQ job queue disabled.');
+      console.warn('   Using fallback: in-process analytics aggregation.');
+
+      // Import and run the fallback aggregation immediately
+      const { runAggregationNow } = await import('./jobs/aggregation.fallback');
+      await runAggregationNow();
+
+      // Schedule the fallback aggregation to run every 5 minutes
+      setInterval(async () => {
+        await runAggregationNow();
+      }, 5 * 60 * 1000);
+      console.log('📊 Fallback aggregation scheduled (every 5 minutes)');
     }
   } catch (error) {
     console.error('Failed to start server:', error);
